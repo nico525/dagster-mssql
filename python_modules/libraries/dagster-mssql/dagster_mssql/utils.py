@@ -7,7 +7,7 @@ import pyodbc
 import sqlalchemy as db
 
 from dagster import Field, IntSource, StringSource, check
-from dagster.core.storage.sql import get_alembic_config, handle_schema_errors
+from dagster.core.storage.sql import get_alembic_config
 from sqlalchemy.ext.compiler import compiles
 
 
@@ -125,9 +125,7 @@ def wait_for_connection(conn_string, retry_limit=5, retry_wait=0.2):
 
 
 def mssql_alembic_config(dunder_file):
-    return get_alembic_config(
-        dunder_file, config_path="../alembic/alembic.ini", script_path="../alembic/"
-    )
+    return get_alembic_config(dunder_file, config_path="../alembic/alembic.ini")
 
 
 @contextmanager
@@ -145,12 +143,7 @@ def create_mssql_connection(engine, dunder_file, storage_type_desc=None):
     try:
         # Retry connection to gracefully handle transient connection issues
         conn = retry_mssql_connection_fn(engine.connect)
-        with handle_schema_errors(
-            conn,
-            mssql_alembic_config(dunder_file),
-            msg="MSSQL {}storage requires migration".format(storage_type_desc),
-        ):
-            yield conn
+        yield conn
     finally:
         if conn:
             conn.close()
