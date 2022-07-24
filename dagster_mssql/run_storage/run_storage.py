@@ -1,15 +1,22 @@
+from datetime import datetime
+from typing import Dict, Union, Optional, List
+
 import sqlalchemy as db
 
 from dagster import check
+from dagster.core.storage.pipeline_run import RunRecord, RunsFilter, TagBucket, JobBucket
 from dagster.core.storage.runs import (
     InstanceInfo,
     RunStorageSqlMetadata,
     SqlRunStorage,
 )
-from dagster.core.storage.sql import stamp_alembic_rev  # pylint: disable=unused-import
+from dagster.core.storage.runs.schema import DaemonHeartbeatsTable, KeyValueStoreTable, RunsTable, RunTagsTable
+from dagster.core.storage.sql import stamp_alembic_rev, check_alembic_revision  # pylint: disable=unused-import
 from dagster.core.storage.sql import create_engine, run_alembic_upgrade
-from dagster.serdes import ConfigurableClass, ConfigurableClassData
+from dagster.serdes import ConfigurableClass, ConfigurableClassData, serialize_dagster_namedtuple
+from dagster.utils import utc_datetime_from_timestamp
 from dagster.utils.backcompat import experimental_class_warning
+
 
 from ..utils import (
     MSSQL_POOL_RECYCLE,
@@ -122,3 +129,62 @@ class MSSQLRunStorage(SqlRunStorage, ConfigurableClass):
         super(MSSQLRunStorage, self).mark_index_built(migration_name)
         if migration_name in self._index_migration_cache:
             del self._index_migration_cache[migration_name]
+
+    @property
+    def supports_bucket_queries(self):
+        if not super().supports_bucket_queries:
+            return False
+
+    def alembic_version(self):
+        alembic_config = mssql_alembic_config(__file__)
+        with self.connect() as conn:
+            return check_alembic_revision(alembic_config, conn)
+
+
+    def _add_filters_to_query(self, query, filters: RunsFilter):
+        check.inst_param(filters, "filters", RunsFilter)
+
+        if filters.run_ids:
+            query = query.where(RunsTable.c.run_id.in_(filters.run_ids))
+
+        if filters.job_name:
+            query = query.where(RunsTable.c.pipeline_name == filters.job_name)
+
+        if filters.mode:
+            query = query.where(RunsTable.c.mode == filters.mode)
+
+        if filters.statuses:
+            query = query.where(
+                RunsTable.c.status.in_([status.value for status in filters.statuses])
+            )
+
+        if filters.tags:
+            query = query.where(
+                db.or_(
+                    *(
+                        db.and_(
+                            RunTagsTable.c.key == key,
+                            (
+                                RunTagsTable.c.value == value
+                                if isinstance(value, str)
+                                else RunTagsTable.c.value.in_(value)
+                            ),
+                        )
+                        for key, value in filters.tags.items()
+                    )
+                )
+            ).group_by(*{*[c for c in query.selected_columns], RunsTable.c.id})
+
+            if len(filters.tags) > 0:
+                query = query.having(db.func.count(RunsTable.c.run_id) == len(filters.tags))
+
+        if filters.snapshot_id:
+            query = query.where(RunsTable.c.snapshot_id == filters.snapshot_id)
+
+        if filters.updated_after:
+            query = query.where(RunsTable.c.update_timestamp > filters.updated_after)
+
+        if filters.created_before:
+            query = query.where(RunsTable.c.create_timestamp < filters.created_before)
+
+        return query
