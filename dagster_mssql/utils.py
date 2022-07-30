@@ -28,7 +28,7 @@ def mssql_config():
                 "hostname": StringSource,
                 "db_name": StringSource,
                 "port": Field(IntSource, is_required=False, default_value=1433),
-                "driver": Field(StringSource, is_required=False, default_value="{ODBC Driver 17 for SQL Server}"),
+                "driver": Field(StringSource, is_required=False, default_value="{ODBC Driver 18 for SQL Server}"),
                 "driver_opts": Field(StringSource, is_required=False, default_value="")
             },
             is_required=False,
