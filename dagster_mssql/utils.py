@@ -1,15 +1,15 @@
 import logging
 import time
-import urllib
 from contextlib import contextmanager
+import urllib
+from urllib.parse import urlparse
 
 import pyodbc
 import sqlalchemy as db
 
-from dagster import Field, IntSource, StringSource, check
-from dagster.core.storage.sql import get_alembic_config
+from dagster import _check as check, Field, StringSource, IntSource
+from dagster._core.storage.sql import get_alembic_config
 from sqlalchemy.ext.compiler import compiles
-
 
 MSSQL_POOL_RECYCLE = 3600
 

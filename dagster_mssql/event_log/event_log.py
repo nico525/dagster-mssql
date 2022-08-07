@@ -1,15 +1,21 @@
 import sqlalchemy as db
 
-from dagster import check
-from dagster.core.storage.event_log import (
+import dagster._check as check
+from dagster._core.storage.event_log import (
+    AssetKeyTable,
     SqlEventLogStorage,
     SqlEventLogStorageMetadata,
     SqlPollingEventWatcher,
 )
-from dagster.core.storage.sql import stamp_alembic_rev  # pylint: disable=unused-import
-from dagster.core.storage.sql import create_engine, run_alembic_upgrade
-from dagster.serdes import ConfigurableClass, ConfigurableClassData
-from dagster.utils.backcompat import experimental_class_warning
+from dagster._core.storage.event_log.migration import ASSET_KEY_INDEX_COLS
+from dagster._core.storage.sql import (
+    check_alembic_revision,
+    create_engine,
+    run_alembic_upgrade,
+    stamp_alembic_rev,
+)
+from dagster._serdes import ConfigurableClass, ConfigurableClassData
+from dagster._utils.backcompat import experimental_class_warning
 
 from ..utils import (
     MSSQL_POOL_RECYCLE,
@@ -20,8 +26,6 @@ from ..utils import (
     retry_mssql_connection_fn,
     retry_mssql_creation_fn,
 )
-
-CHANNEL_NAME = "run_events"
 
 
 class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
@@ -36,10 +40,8 @@ class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
        :start-after: start_marker_event_log
        :end-before: end_marker_event_log
        :language: YAML
-
     Note that the fields in this config are :py:class:`~dagster.StringSource` and
     :py:class:`~dagster.IntSource` and can be configured from environment variables.
-
     """
 
     def __init__(self, mssql_url, inst_data=None):
@@ -139,8 +141,8 @@ class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if name in self._secondary_index_cache:
             del self._secondary_index_cache[name]
 
-    def watch(self, run_id, start_cursor, callback):
-        self._event_watcher.watch_run(run_id, start_cursor, callback)
+    def watch(self, run_id, cursor, callback):
+        self._event_watcher.watch_run(run_id, cursor, callback)
 
     def end_watch(self, run_id, handler):
         self._event_watcher.unwatch_run(run_id, handler)
@@ -156,3 +158,8 @@ class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if not self._disposed:
             self._disposed = True
             self._event_watcher.close()
+
+    def alembic_version(self):
+        alembic_config = mssql_alembic_config(__file__)
+        with self._connect() as conn:
+            return check_alembic_revision(alembic_config, conn)

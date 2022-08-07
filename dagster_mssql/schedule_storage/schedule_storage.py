@@ -1,12 +1,16 @@
 import pendulum
 import sqlalchemy as db
+from dagster._utils.backcompat import experimental_class_warning
 
-from dagster import check
-from dagster.core.storage.schedules import ScheduleStorageSqlMetadata, SqlScheduleStorage
-from dagster.core.storage.schedules.schema import InstigatorsTable
-from dagster.core.storage.sql import create_engine, run_alembic_upgrade, stamp_alembic_rev, check_alembic_revision
-from dagster.serdes import ConfigurableClass, ConfigurableClassData, serialize_dagster_namedtuple
-from dagster.utils.backcompat import experimental_class_warning
+import dagster._check as check
+from dagster._core.storage.schedules import ScheduleStorageSqlMetadata, SqlScheduleStorage
+from dagster._core.storage.sql import (
+    check_alembic_revision,
+    create_engine,
+    run_alembic_upgrade,
+    stamp_alembic_rev,
+)
+from dagster._serdes import ConfigurableClass, ConfigurableClassData
 
 from ..utils import (
     MSSQL_POOL_RECYCLE,
@@ -109,25 +113,6 @@ class MSSQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
     @property
     def supports_batch_queries(self):
         return False
-
-    def _add_or_update_instigators_table(self, conn, state):
-        selector_id = state.selector_id
-        conn.execute(
-            db.dialects.mysql.insert(InstigatorsTable)
-                .values(
-                selector_id=selector_id,
-                repository_selector_id=state.repository_selector_id,
-                status=state.status.value,
-                instigator_type=state.instigator_type.value,
-                instigator_body=serialize_dagster_namedtuple(state),
-            )
-                .on_duplicate_key_update(
-                status=state.status.value,
-                instigator_type=state.instigator_type.value,
-                instigator_body=serialize_dagster_namedtuple(state),
-                update_timestamp=pendulum.now("UTC"),
-            )
-        )
 
     def alembic_version(self):
         alembic_config = mssql_alembic_config(__file__)

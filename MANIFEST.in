@@ -2,3 +2,4 @@ include LICENSE
 graft dagster_mssql/alembic
 global-exclude __pycache__
 global-exclude *.py[co]
+include dagster_mssql/py.typed
