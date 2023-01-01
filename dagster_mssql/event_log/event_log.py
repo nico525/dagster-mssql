@@ -2,12 +2,10 @@ import sqlalchemy as db
 
 import dagster._check as check
 from dagster._core.storage.event_log import (
-    AssetKeyTable,
     SqlEventLogStorage,
     SqlEventLogStorageMetadata,
     SqlPollingEventWatcher,
 )
-from dagster._core.storage.event_log.migration import ASSET_KEY_INDEX_COLS
 from dagster._core.storage.sql import (
     check_alembic_revision,
     create_engine,
@@ -18,7 +16,6 @@ from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._utils.backcompat import experimental_class_warning
 
 from ..utils import (
-    MSSQL_POOL_RECYCLE,
     create_mssql_connection,
     mssql_alembic_config,
     mssql_config,
@@ -78,14 +75,14 @@ class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
                 SqlEventLogStorageMetadata.create_all(conn)
                 stamp_alembic_rev(mssql_alembic_config(__file__), conn)
 
-    def optimize_for_dagit(self, statement_timeout):
+    def optimize_for_dagit(self, statement_timeout, pool_recycle):
         # When running in dagit, hold an open connection
         # https://github.com/dagster-io/dagster/issues/3719
         self._engine = create_engine(
             self.mssql_url,
             isolation_level="AUTOCOMMIT",
             pool_size=1,
-            pool_recycle=MSSQL_POOL_RECYCLE,
+            pool_recycle=pool_recycle,
         )
 
     def upgrade(self):
@@ -128,6 +125,9 @@ class MSSQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     def index_connection(self):
         return self._connect()
+
+    def has_table(self, table_name: str) -> bool:
+        return bool(self._engine.dialect.has_table(self._engine.connect(), table_name))
 
     def has_secondary_index(self, name):
         if name not in self._secondary_index_cache:

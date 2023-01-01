@@ -11,8 +11,6 @@ from dagster import _check as check, Field, StringSource, IntSource
 from dagster._core.storage.sql import get_alembic_config
 from sqlalchemy.ext.compiler import compiles
 
-MSSQL_POOL_RECYCLE = 3600
-
 
 class DagsterMSSQLException(Exception):
     pass

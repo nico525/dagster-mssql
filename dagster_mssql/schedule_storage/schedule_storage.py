@@ -1,4 +1,3 @@
-import pendulum
 import sqlalchemy as db
 from dagster._utils.backcompat import experimental_class_warning
 
@@ -13,7 +12,6 @@ from dagster._core.storage.sql import (
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 
 from ..utils import (
-    MSSQL_POOL_RECYCLE,
     create_mssql_connection,
     mssql_alembic_config,
     mssql_config,
@@ -66,14 +64,14 @@ class MSSQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
                 ScheduleStorageSqlMetadata.create_all(conn)
                 stamp_alembic_rev(mssql_alembic_config(__file__), conn)
 
-    def optimize_for_dagit(self, statement_timeout):
+    def optimize_for_dagit(self, statement_timeout, pool_recycle):
         # When running in dagit, hold an open connection
         # https://github.com/dagster-io/dagster/issues/3719
         self._engine = create_engine(
             self.mssql_url,
             isolation_level="AUTOCOMMIT",
             pool_size=1,
-            pool_recycle=MSSQL_POOL_RECYCLE,
+            pool_recycle=pool_recycle,
         )
 
     @property

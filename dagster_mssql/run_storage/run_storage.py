@@ -1,25 +1,21 @@
 import sqlalchemy as db
 
 import dagster._check as check
-from dagster._core.storage.pipeline_run import RunsFilter
 from dagster._core.storage.runs import (
-    DaemonHeartbeatsTable,
     InstanceInfo,
     RunStorageSqlMetadata,
     SqlRunStorage,
 )
-from dagster._core.storage.runs.schema import KeyValueStoreTable, RunsTable, RunTagsTable
 from dagster._core.storage.sql import (
     check_alembic_revision,
     create_engine,
     run_alembic_upgrade,
     stamp_alembic_rev,
 )
-from dagster._serdes import ConfigurableClass, ConfigurableClassData, serialize_dagster_namedtuple
+from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._utils.backcompat import experimental_class_warning
 
 from ..utils import (
-    MSSQL_POOL_RECYCLE,
     create_mssql_connection,
     mssql_alembic_config,
     mssql_config,
@@ -78,11 +74,11 @@ class MSSQLRunStorage(SqlRunStorage, ConfigurableClass):
                 RunStorageSqlMetadata.create_all(conn)
                 stamp_alembic_rev(mssql_alembic_config(__file__), conn)
 
-    def optimize_for_dagit(self, statement_timeout):
+    def optimize_for_dagit(self, statement_timeout, pool_recycle):
         # When running in dagit, hold 1 open connection
         # https://github.com/dagster-io/dagster/issues/3719
         self._engine = create_engine(
-            self.mssql_url, isolation_level="AUTOCOMMIT", pool_size=1, pool_recycle=MSSQL_POOL_RECYCLE
+            self.mssql_url, isolation_level="AUTOCOMMIT", pool_size=1, pool_recycle=pool_recycle
         )
 
     @property
@@ -139,52 +135,3 @@ class MSSQLRunStorage(SqlRunStorage, ConfigurableClass):
         alembic_config = mssql_alembic_config(__file__)
         with self.connect() as conn:
             return check_alembic_revision(alembic_config, conn)
-
-
-    def _add_filters_to_query(self, query, filters: RunsFilter):
-        check.inst_param(filters, "filters", RunsFilter)
-
-        if filters.run_ids:
-            query = query.where(RunsTable.c.run_id.in_(filters.run_ids))
-
-        if filters.job_name:
-            query = query.where(RunsTable.c.pipeline_name == filters.job_name)
-
-        if filters.mode:
-            query = query.where(RunsTable.c.mode == filters.mode)
-
-        if filters.statuses:
-            query = query.where(
-                RunsTable.c.status.in_([status.value for status in filters.statuses])
-            )
-
-        if filters.tags:
-            query = query.where(
-                db.or_(
-                    *(
-                        db.and_(
-                            RunTagsTable.c.key == key,
-                            (
-                                RunTagsTable.c.value == value
-                                if isinstance(value, str)
-                                else RunTagsTable.c.value.in_(value)
-                            ),
-                        )
-                        for key, value in filters.tags.items()
-                    )
-                )
-            ).group_by(*{*[c for c in query.selected_columns], RunsTable.c.id})
-
-            if len(filters.tags) > 0:
-                query = query.having(db.func.count(RunsTable.c.run_id) == len(filters.tags))
-
-        if filters.snapshot_id:
-            query = query.where(RunsTable.c.snapshot_id == filters.snapshot_id)
-
-        if filters.updated_after:
-            query = query.where(RunsTable.c.update_timestamp > filters.updated_after)
-
-        if filters.created_before:
-            query = query.where(RunsTable.c.create_timestamp < filters.created_before)
-
-        return query
